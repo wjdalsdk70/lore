@@ -1,4 +1,5 @@
 # wiki 도구 정의 및 실행
+import os
 import re
 from datetime import date
 from pathlib import Path
@@ -64,6 +65,18 @@ DEFINITIONS = [
         "name": "wiki_list",
         "description": "wiki 파일 전체 목록",
         "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
+    {
+        "name": "web_search",
+        "description": "웹 검색 — 최신 정보, 공식 문서, 뉴스 조회. wiki에 없는 정보에 사용.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "max_results": {"type": "integer", "default": 5},
+            },
+            "required": ["query"],
+        },
     },
     {
         "name": "log_append",
@@ -174,6 +187,27 @@ def run(name: str, inputs: dict) -> str:
 
     if name == "wiki_list":
         return "\n".join(sorted(str(f.relative_to(VAULT_DIR)) for f in WIKI_DIR.rglob("*.md")))
+
+    if name == "web_search":
+        api_key = os.environ.get("TAVILY_API_KEY", "")
+        if not api_key:
+            return "TAVILY_API_KEY 환경변수 미설정"
+        try:
+            from tavily import TavilyClient
+            client = TavilyClient(api_key=api_key)
+            resp = client.search(
+                query=inputs["query"],
+                max_results=inputs.get("max_results", 5),
+                include_answer=True,
+            )
+            lines = []
+            if resp.get("answer"):
+                lines.append(f"요약: {resp['answer']}\n")
+            for r in resp.get("results", []):
+                lines.append(f"[{r['title']}]({r['url']})\n{r.get('content', '')[:300]}")
+            return "\n\n".join(lines) if lines else "결과 없음"
+        except Exception as e:
+            return f"검색 오류: {e}"
 
     if name == "log_append":
         with open(LOG_PATH, "a", encoding="utf-8") as f:
