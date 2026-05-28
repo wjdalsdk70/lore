@@ -407,11 +407,48 @@ def _cmd_init():
     print()
 
 
+# ── 스피너 ────────────────────────────────────────────────────────
+
+_SPIN_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+
+
+class _Spinner:
+    def __init__(self):
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def start(self, msg: str = "생각 중"):
+        self._stop.clear()
+        self._thread = threading.Thread(target=self._run, args=(msg,), daemon=True)
+        self._thread.start()
+
+    def stop(self):
+        self._stop.set()
+        if self._thread:
+            self._thread.join()
+        sys.stdout.write("\r\033[2K")
+        sys.stdout.flush()
+
+    def _run(self, msg: str):
+        i = 0
+        while not self._stop.is_set():
+            ch = _SPIN_FRAMES[i % len(_SPIN_FRAMES)]
+            sys.stdout.write(f"\r  {cyan(ch)}  {gray(msg)}")
+            sys.stdout.flush()
+            time.sleep(0.08)
+            i += 1
+
+
+_spinner = _Spinner()
+
+
 # ── 콜백 ──────────────────────────────────────────────────────────
 
 def _on_tool_call(name: str, inputs: dict, elapsed: float):
+    _spinner.stop()
     label = str(list(inputs.values())[0])[:40] if inputs else ""
     print(f"    {gray('·')} {gray(name)}  {dim(label)}  {gray(f'{elapsed:.1f}s')}")
+    _spinner.start("도구 실행 중")
 
 
 # ── 메인 ──────────────────────────────────────────────────────────
@@ -474,7 +511,7 @@ def main():
     try:
         while True:
             try:
-                user_input = input(f"  {cyan('❯')} ").strip()
+                user_input = input(f"  \001{C.CYAN}\002❯\001{C.RESET}\002 ").strip()
             except EOFError:
                 break
 
@@ -512,7 +549,9 @@ def main():
                 continue
 
             print()
+            _spinner.start()
             response = agent.chat(user_input, on_tool_call=_on_tool_call)
+            _spinner.stop()
             print(f"\n  {response.replace(chr(10), chr(10) + '  ')}\n")
 
     except KeyboardInterrupt:
