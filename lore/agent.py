@@ -4,9 +4,26 @@ import time
 import anthropic
 
 from . import tools
-from .config import INDEX_PATH, MODEL_CHAT
+from .config import INDEX_PATH, MODEL_CHAT, SEARCH_PROVIDER as _SEARCH_PROVIDER
 
 client = anthropic.Anthropic()
+
+model = MODEL_CHAT
+
+
+def set_model(name: str) -> None:
+    global model
+    model = name
+
+
+def _tool_defs() -> list:
+    from .config import SEARCH_PROVIDER
+    if SEARCH_PROVIDER == "anthropic":
+        base = [t for t in tools.DEFINITIONS if t["name"] != "web_search"]
+        return base + [{"type": "web_search_20250305", "name": "web_search"}]
+    if SEARCH_PROVIDER == "none":
+        return [t for t in tools.DEFINITIONS if t["name"] != "web_search"]
+    return tools.DEFINITIONS
 
 SYSTEM = """\
 당신은 Brain Wiki 사서입니다. 개발자 이정민의 기술 지식 베이스를 관리합니다.
@@ -36,11 +53,12 @@ def chat(user_message: str, on_tool_call=None) -> str:
     history.append({"role": "user", "content": user_message})
 
     while True:
+        from .config import SEARCH_PROVIDER
         resp = client.messages.create(
-            model=MODEL_CHAT,
+            model=model,
             max_tokens=2000,
             system=_system(),
-            tools=tools.DEFINITIONS,
+            tools=_tool_defs(),
             messages=history,
         )
 
@@ -51,11 +69,17 @@ def chat(user_message: str, on_tool_call=None) -> str:
                 if block.type != "tool_use":
                     continue
                 t0 = time.time()
-                result = tools.run(block.name, block.input)
-                elapsed = time.time() - t0
-                if on_tool_call:
-                    on_tool_call(block.name, block.input, elapsed)
-                results.append({"type": "tool_result", "tool_use_id": block.id, "content": result})
+                if block.name == "web_search" and SEARCH_PROVIDER == "anthropic":
+                    # Anthropic이 서버 사이드로 처리 — 빈 결과로 루프 계속
+                    results.append({"type": "tool_result", "tool_use_id": block.id, "content": []})
+                    if on_tool_call:
+                        on_tool_call(block.name, block.input, time.time() - t0)
+                else:
+                    result = tools.run(block.name, block.input)
+                    elapsed = time.time() - t0
+                    if on_tool_call:
+                        on_tool_call(block.name, block.input, elapsed)
+                    results.append({"type": "tool_result", "tool_use_id": block.id, "content": result})
             history.append({"role": "user", "content": results})
             continue
 

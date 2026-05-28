@@ -3,7 +3,7 @@ name = "lore"
 version = "0.1.0"
 description = "개인 로컬 지식 베이스 — Claude가 읽고 저장하는 도서관"
 requires-python = ">=3.11"
-dependencies = ["anthropic>=0.104"]
+dependencies = ["anthropic>=0.104", "questionary>=2.0", "tavily-python>=0.5"]
 
 [project.scripts]
 lore = "lore.cli:main"
